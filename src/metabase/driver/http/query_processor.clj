@@ -1,6 +1,7 @@
 (ns metabase.driver.http.query-processor
   (:refer-clojure :exclude [==])
   (:require [cheshire.core :as json]
+            [clojure.tools.logging :as log]
             [clojure.walk :as walk]
             [clj-http.client :as client])
   (:import [com.jayway.jsonpath JsonPath Predicate]))
@@ -44,14 +45,14 @@
       (for [field-fn fields-fns]
         (field-fn row)))))
 
-(defn field-names
+
+(defn add-column-metadata
   [fields]
   (for [field fields]
-    (keyword (if (string? field)
-               field
-               (json/generate-string field)))))
-   
-(defn execute-http-request [native-query]
+    {:name field :display_name field}))
+
+
+(defn execute-http-request-reducible [respond native-query]
   (let [query         (if (string? (:query native-query))
                         (json/parse-string (:query native-query) keyword)
                         (:query native-query))
@@ -66,10 +67,12 @@
         fields        (or (:fields (:result query)) (keys (first rows)))
         aggregations  (or (:aggregation (:result query)) [])
         breakouts     (or (:breakout (:result query)) [])
-        raw           (and (= (count breakouts) 0) (= (count aggregations) 0))]
-    {:columns (if raw
-                (field-names fields)
-                (field-names (concat breakouts aggregations)))
-     :rows    (if raw
-                (extract-fields rows fields)
-                (aggregate rows aggregations breakouts))}))
+        raw           (and (= (count breakouts) 0) (= (count aggregations) 0))
+        columns_metadata (if raw (add-column-metadata fields) (add-column-metadata (concat breakouts aggregations)))]
+    (log/info "Row results: " rows)
+    (log/info "Columns metadata: " columns_metadata)
+    (respond
+     {:cols columns_metadata}
+     (if raw
+       (extract-fields rows fields)
+       (aggregate rows aggregations breakouts)))))

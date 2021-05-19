@@ -21,14 +21,17 @@
 
 (defn- database->table-def
   [database name]
+  (log/info "database->table-def database:" database ", name: " name)
   (first (filter #(= (:name %) name) (database->table-defs database))))
 
 (defn table-def->field
   [table-def name]
+  (log/info "table-def->field table-def: " table-def "name" name )
   (find-first #(= (:name %) name) (:fields table-def)))
 
 (defn mbql-field->expression
   [table-def expr]
+  (log/info "mbql-field->expression table-def: " table-def "expr" expr)
   (let [field (table-def->field table-def (:field-name expr))]
     (or (:expression field) (:name field))))
 
@@ -53,17 +56,20 @@
 
 (defmethod driver/describe-database :http [_ database]
   (let [table-defs (database->table-defs database)]
+    (log/info "Describe database...")
     {:tables (set (for [table-def table-defs]
                     {:name   (:name table-def)
                      :schema (:schema table-def)}))}))
 
 (defmethod driver/describe-table :http [_ database table]
   (let [table-def  (database->table-def database (:name table))]
+    (log/info "Describe table...")
     {:name   (:name table-def)
      :schema (:schema table-def)
      :fields (set (for [field (:fields table-def)]
                     {:name          (:name field)
                      :database-type (:type field)
+                     :database-position (:id database)
                      :base-type     (or (:base_type field)
                                         (json-type->base-type (keyword (:type field))))}))}))
 
@@ -73,11 +79,17 @@
         table-def   (database->table-def database (:name table))
         breakout    (map (partial mbql-field->expression table-def) (:breakout (:query query)))
         aggregation (map (partial mbql-aggregation->aggregation table-def) (:aggregation (:query query)))]
+    (log/info "driver/mbql->native Query:" query)
     {:query (merge (select-keys table-def [:method :url :headers])
                    {:result (merge (:result table-def)
                                    {:breakout     breakout
                                     :aggregation  aggregation})})
      :mbql? true}))
 
-(defmethod driver/execute-query :http [_ {native-query :native}]
-  (http.qp/execute-http-request native-query)) 
+;; (defmethod driver/execute-query :http [_ {native-query :native}]
+;;   (http.qp/execute-http-request native-query)) 
+
+(defmethod driver/execute-reducible-query :http
+  [_ {query :native} _ respond]
+  (log/info "Query: " query)
+  (http.qp/execute-http-request-reducible respond query))
