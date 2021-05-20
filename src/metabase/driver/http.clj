@@ -26,21 +26,19 @@
 
 (defn table-def->field
   [table-def name]
-  (log/info "table-def->field table-def: " table-def "name" name )
+  (log/info "table-def->field table-def: " table-def "name" name)
   (find-first #(= (:name %) name) (:fields table-def)))
 
 (defn mbql-field->expression
   [table-def expr]
   (log/info "mbql-field->expression table-def: " table-def "expr" expr)
-  (let [field (table-def->field table-def (:field-name expr))]
-    (or (:expression field) (:name field))))
+  (let [field-store (qp.store/field (get expr 1))]
+    (:name field-store)))
 
 (defn mbql-aggregation->aggregation
   [table-def mbql-aggregation]
-  (if (:field mbql-aggregation)
-    [(:aggregation-type mbql-aggregation)
-     (mbql-field->expression table-def (:field mbql-aggregation))]
-    [(:aggregation-type mbql-aggregation)]))
+  (log/info "mbql-aggregation->aggregation" mbql-aggregation)
+  [(:name (get mbql-aggregation 2))])
 
 (def json-type->base-type
   {:string  :type/Text
@@ -49,7 +47,7 @@
 
 (driver/register! :http)
 
-(defmethod driver/supports? [:http :basic-aggregations] [_ _] false)
+(defmethod driver/supports? [:http :basic-aggregations] [_ _] true)
 
 (defmethod driver/can-connect? :http [_ _]
   true)
@@ -80,6 +78,9 @@
         breakout    (map (partial mbql-field->expression table-def) (:breakout (:query query)))
         aggregation (map (partial mbql-aggregation->aggregation table-def) (:aggregation (:query query)))]
     (log/info "driver/mbql->native Query:" query)
+    (log/info "table" table)
+    (log/info "breakout" breakout)
+    (log/info "aggregation" aggregation)
     {:query (merge (select-keys table-def [:method :url :headers])
                    {:result (merge (:result table-def)
                                    {:breakout     breakout

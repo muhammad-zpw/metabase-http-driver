@@ -19,10 +19,11 @@
     :count count
     :sum   #(reduce + (map (compile-expression (first arguments)) %))
     :float #(Float/parseFloat ((compile-expression (first arguments)) %))
-           (throw (Exception. (str "Unknown operator: " operator)))))
+    (throw (Exception. (str "Unknown operator: " operator)))))
 
 (defn compile-expression
   [expr]
+  (log/info "compile-expression" expr)
   (cond
     (string? expr)  (partial json-path expr)
     (number? expr)  (constantly expr)
@@ -34,6 +35,7 @@
   (let [breakouts-fns (map compile-expression breakouts)
         breakout-fn   (fn [row] (for [breakout breakouts-fns] (breakout row)))
         metrics-fns   (map compile-expression metrics)]
+    (log/info breakout-fn)
     (for [[breakout-key breakout-rows] (group-by breakout-fn rows)]
       (concat breakout-key (for [metrics-fn metrics-fns]
                              (metrics-fn breakout-rows))))))
@@ -59,7 +61,7 @@
         result        (client/request {:method  (or (:method query) :get)
                                        :url     (:url query)
                                        :headers (:headers query)
-                                       :body    (if (:body query) (json/generate-string (:body query)))
+                                       :body    (if (:body query) (json/generate-string (:body query)) "")
                                        :accept  :json
                                        :as      :json})
         rows-path     (or (:path (:result query)) "$")
@@ -68,8 +70,7 @@
         aggregations  (or (:aggregation (:result query)) [])
         breakouts     (or (:breakout (:result query)) [])
         raw           (and (= (count breakouts) 0) (= (count aggregations) 0))
-        columns_metadata (if raw (add-column-metadata fields) (add-column-metadata (concat breakouts aggregations)))]
-    (log/info "Row results: " rows)
+        columns_metadata (if raw (add-column-metadata fields) (add-column-metadata (concat breakouts (get aggregations 0))))]
     (log/info "Columns metadata: " columns_metadata)
     (respond
      {:cols columns_metadata}
